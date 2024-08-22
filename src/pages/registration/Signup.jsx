@@ -18,6 +18,7 @@ function Signup() {
       setPassword("");
     } catch (error) {
       console.log(error);
+      alert("Password should be must 6 letters");
     }
   };
 

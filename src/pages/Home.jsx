@@ -2,15 +2,17 @@ import Navbar from "../components/Navbar";
 import React, { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { db } from "../firebase/FirebaseConfig";
-import {
-  collection,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  doc,
-  getDocs,
-  query,
-} from "firebase/firestore";
+import { collection, addDoc } from "firebase/firestore";
+
+// const setDocument = async () => {
+//   const docRef = await addDoc(collection(db, "cities"), {
+//     name: "Los Angeles",
+//     state: "CA",
+//     country: "USA",
+//   });
+//   console.log("Document written with ID: ", docRef.id);
+// };
+
 import {
   addTask,
   editTask,
@@ -19,7 +21,6 @@ import {
   setEditing,
   loadTasks,
 } from "../redux/todo/taskSlice.js";
-
 function Home() {
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
@@ -27,34 +28,33 @@ function Home() {
   const { tasks, isEditing, editIndex } = useSelector((state) => state.tasks);
 
   useEffect(() => {
-    const fetchTasks = async () => {
-      const tasksCollection = query(collection(db, "tasks"));
-      const taskSnapshot = await getDocs(tasksCollection);
-      const tasksList = taskSnapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      dispatch(loadTasks(tasksList));
-    };
-
-    fetchTasks();
+    const data = localStorage.getItem("newlist");
+    if (data) {
+      try {
+        dispatch(loadTasks(JSON.parse(data)));
+      } catch (e) {
+        console.error("Error parsing JSON from localStorage:", e);
+      }
+    }
   }, [dispatch]);
 
-  const addOrEditTask = async () => {
+  const updateLocalStorage = (tasks) => {
+    localStorage.setItem("newlist", JSON.stringify(tasks));
+  };
+
+  const addOrEditTask = () => {
     if (title.length >= 1 && desc.length >= 1) {
       if (isEditing) {
-        const taskDocRef = doc(db, "tasks", tasks[editIndex].id);
-        await updateDoc(taskDocRef, { title, desc });
-
         const updatedTasks = tasks.map((task, index) =>
-          index === editIndex ? { ...task, title, desc } : task
+          index === editIndex ? { title, desc } : task
         );
         dispatch(editTask({ index: editIndex, task: { title, desc } }));
+        updateLocalStorage(updatedTasks);
         dispatch(setEditing({ isEditing: false, editIndex: null }));
       } else {
-        const docRef = await addDoc(collection(db, "tasks"), { title, desc });
-        const newTask = { id: docRef.id, title, desc };
+        const newTask = { title, desc };
         dispatch(addTask(newTask));
+        updateLocalStorage([...tasks, newTask]);
       }
       setTitle("");
       setDesc("");
@@ -68,23 +68,15 @@ function Home() {
     dispatch(setEditing({ isEditing: true, editIndex: index }));
   };
 
-  const removeTaskHandler = async (index) => {
-    const taskDocRef = doc(db, "tasks", tasks[index].id);
-    await deleteDoc(taskDocRef);
-
-    const updatedTasks = tasks.filter((_, i) => i !== index);
+  const removeTaskHandler = (index) => {
+    const updatedTasks = tasks.filter((itm, i) => i !== index);
     dispatch(removeTask(index));
+    updateLocalStorage(updatedTasks);
   };
 
-  const removeAllHandler = async () => {
-    const tasksCollection = collection(db, "tasks");
-    const taskSnapshot = await getDocs(tasksCollection);
-    const deletePromises = taskSnapshot.docs.map((taskDoc) =>
-      deleteDoc(taskDoc.ref)
-    );
-    await Promise.all(deletePromises);
-
+  const removeAllHandler = () => {
     dispatch(removeAllTasks());
+    localStorage.removeItem("newlist");
   };
 
   return (
@@ -124,7 +116,7 @@ function Home() {
       <ul className="text-center bg-slate-300 my-5 w-full">
         {tasks.length > 0 ? (
           tasks.map((item, index) => (
-            <li className="grid grid-cols-[5fr,1fr] gap-x-1 my-5" key={item.id}>
+            <li className="grid grid-cols-[5fr,1fr] gap-x-1 my-5" key={index}>
               <div className="grid grid-cols-[1fr,1fr,1fr] gap-x-3 w-full">
                 <div className="flex flex-col space-y-4">
                   <div className="flex items-center space-x-20">
@@ -133,7 +125,7 @@ function Home() {
                   </div>
                   <div className="w-auto h-auto">
                     <select id="priority" className="text-sm p-1 w-full">
-                      <option defaultValue>Choose priority</option>
+                      <option selected>Choose priority</option>
                       <option value="Low">Low</option>
                       <option value="Medium">Medium</option>
                       <option value="Hard">Hard</option>
@@ -157,7 +149,7 @@ function Home() {
                 >
                   Edit
                 </button>
-                {isEditing === false && (
+                {isEditing == false && (
                   <button
                     className="bg-white border-2 border-black px-1 w-15 h-10 rounded mx-3"
                     onClick={() => removeTaskHandler(index)}
@@ -175,7 +167,7 @@ function Home() {
       </ul>
 
       <div className="flex justify-center items-center h-full my-10">
-        {isEditing === false && tasks.length > 0 && (
+        {isEditing == false && tasks.length > 0 && (
           <button
             onClick={removeAllHandler}
             className="bg-green-900 border-2 border-black px-3 py-3 rounded font-bold"
