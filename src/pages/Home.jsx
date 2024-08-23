@@ -2,17 +2,16 @@ import Navbar from "../components/Navbar";
 import React, { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { db } from "../firebase/FirebaseConfig";
-import { collection, addDoc } from "firebase/firestore";
-
-// const setDocument = async () => {
-//   const docRef = await addDoc(collection(db, "cities"), {
-//     name: "Los Angeles",
-//     state: "CA",
-//     country: "USA",
-//   });
-//   console.log("Document written with ID: ", docRef.id);
-// };
-
+import {
+  collection,
+  addDoc,
+  getDocs,
+  updateDoc,
+  deleteDoc,
+  doc,
+  query,
+  where,
+} from "firebase/firestore";
 import {
   addTask,
   editTask,
@@ -21,40 +20,52 @@ import {
   setEditing,
   loadTasks,
 } from "../redux/todo/taskSlice.js";
+import { auth } from "../firebase/FirebaseConfig";
+
 function Home() {
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
   const dispatch = useDispatch();
   const { tasks, isEditing, editIndex } = useSelector((state) => state.tasks);
+  const user = auth.currentUser;
 
   useEffect(() => {
-    const data = localStorage.getItem("newlist");
-    if (data) {
-      try {
-        dispatch(loadTasks(JSON.parse(data)));
-      } catch (e) {
-        console.error("Error parsing JSON from localStorage:", e);
-      }
+    if (user) {
+      const fetchTasks = async () => {
+        const tasksCollectionRef = collection(db, "tasks");
+        const q = query(tasksCollectionRef, where("userId", "==", user.uid));
+        const data = await getDocs(q);
+        const tasksList = data.docs.map((doc) => ({
+          ...doc.data(),
+          id: doc.id,
+        }));
+        dispatch(loadTasks(tasksList));
+      };
+      fetchTasks();
     }
-  }, [dispatch]);
+  }, [dispatch, user]);
 
-  const updateLocalStorage = (tasks) => {
-    localStorage.setItem("newlist", JSON.stringify(tasks));
-  };
-
-  const addOrEditTask = () => {
+  const addOrEditTask = async () => {
     if (title.length >= 1 && desc.length >= 1) {
       if (isEditing) {
-        const updatedTasks = tasks.map((task, index) =>
-          index === editIndex ? { title, desc } : task
+        const taskDoc = doc(db, "tasks", tasks[editIndex].id);
+        await updateDoc(taskDoc, { title, desc });
+        dispatch(
+          editTask({
+            index: editIndex,
+            task: { title, desc, id: tasks[editIndex].id },
+          })
         );
-        dispatch(editTask({ index: editIndex, task: { title, desc } }));
-        updateLocalStorage(updatedTasks);
         dispatch(setEditing({ isEditing: false, editIndex: null }));
       } else {
-        const newTask = { title, desc };
-        dispatch(addTask(newTask));
-        updateLocalStorage([...tasks, newTask]);
+        const tasksCollectionRef = collection(db, "tasks");
+        const newTask = await addDoc(tasksCollectionRef, {
+          title,
+          desc,
+          userId: user.uid, // Store the user ID with the task
+        });
+        const newTaskData = { title, desc, id: newTask.id };
+        dispatch(addTask(newTaskData));
       }
       setTitle("");
       setDesc("");
@@ -68,15 +79,18 @@ function Home() {
     dispatch(setEditing({ isEditing: true, editIndex: index }));
   };
 
-  const removeTaskHandler = (index) => {
-    const updatedTasks = tasks.filter((itm, i) => i !== index);
+  const removeTaskHandler = async (index) => {
+    const taskDoc = doc(db, "tasks", tasks[index].id);
+    await deleteDoc(taskDoc);
     dispatch(removeTask(index));
-    updateLocalStorage(updatedTasks);
   };
 
-  const removeAllHandler = () => {
+  const removeAllHandler = async () => {
+    for (let task of tasks) {
+      const taskDoc = doc(db, "tasks", task.id);
+      await deleteDoc(taskDoc);
+    }
     dispatch(removeAllTasks());
-    localStorage.removeItem("newlist");
   };
 
   return (
